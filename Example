@@ -283,6 +283,199 @@ while(<IN_LIST>)
 close IN_LIST
 	or warn $!;
 
-####################
+#########################
 
-#####
+##### lib_mp_rev.pl #####
+
+#!/usr/bin/env perl
+
+# Script      : lib_mp.pl
+# Version     : v0r0
+# Author      : JeLuen, Ju
+# Description : library minimum period parser for each SRAM groups
+# KeyWord     : 
+# ChangeLog   : v0r0 : 2018 / 07 / 08 --> File Created
+
+
+
+# plug-in package declaration
+use strict;
+use warnings;
+no warnings qw(deprecated);
+use Class::Struct;
+use Switch;
+
+# system setting
+
+	# auto flush I/O buffers
+	$| = 1;
+
+# global setting
+	
+	my $in_file;
+	my $out_file = "./out.list";
+
+	my %sram;
+	my $cur_sram;
+	my $cur_sdf_cond;
+
+	struct mem_db => {
+		group => '$',
+		sdf_cond_2_mp => '%',
+	};
+
+
+######################
+#### Input Argv . ####
+######################
+if(not defined $ARGV[0])
+{
+SHOW_USAGE:
+	my $script_ref_name = $0;
+	$script_ref_name =~ s/^\S+\/([a-zA-Z0-9_.]+\.pl)$/$1/;
+
+	print "\n\tUsage : " . $script_ref_name . " \$in_file\n";
+	exit -1;
+}
+
+if(not defined $ARGV[0])
+{
+	print RED BOLD "[Error] you didn't specified \$in_file ...\n";
+	goto SHOW_USAGE;
+}
+else
+{
+	if(not -e $ARGV[0])
+	{
+		print "[Error] Cannot find \$in_file ...\n";
+		goto SHOW_USAGE;
+	}
+	else
+	{
+		$in_file = $ARGV[0];
+	}
+}
+
+###################### ###################### ######################
+#### Processing . #### #### Processing . #### #### Processing . ####
+###################### ###################### ######################
+
+print "\n\n[Info]  Processing input data, please wait ...\n";
+
+open IN_FILE, $in_file
+	or die $!;
+
+while(<IN_FILE>)
+{
+	if(/^(\d+)\s+(\S+)$/)
+	{
+		$cur_sram = $2;
+		$sram{$cur_sram} = mem_db -> new();
+		$sram{$cur_sram} -> group($1);
+	}
+	elsif(/^(\S+)$/)
+	{
+		print "\n\t[Info]  scanning : " . $1 . "...\n\n";
+
+		my $lib_state = 0;
+
+		open IN_LIB, $1
+			or die $!;
+
+		while(<IN_LIB>)
+		{
+			switch($lib_state)
+			{
+				case 0
+				{
+					$lib_state = 1 if(/^\s+timing_type\s+:\s+minimum_period\s*;/);
+				}
+				case 1
+				{
+					  if(/^\s+sdf_cond\s+:\s+\"(\S+)\"\s*;/)
+					  {
+					  	$cur_sdf_cond = $1;
+						$lib_state = 2;
+					  }
+				}
+				case 2
+				{
+					$lib_state = 3 if(/rise_constraint/);
+				}
+				case 3
+				{
+					if(/^\s+values\s+\(\s+\"[^,]+,\s+[^,]+,\s+([^,]+)/)
+					{
+						$sram{$cur_sram} -> sdf_cond_2_mp -> {$cur_sdf_cond} = $1;
+						$lib_state = 0;
+
+						my $out_sdf_cond = sprintf("%20s", $cur_sdf_cond);
+						my $out_mp = sprintf("%10s", $1);
+						print "\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . "\n";
+					}
+				}
+			}
+		}
+
+		close IN_LIB
+			or warn $!;
+
+		if($lib_state ne 0)
+		{
+			print "\t[Error] lib_state error ... please check source code\n";
+			exit -1;
+		}
+	}
+}
+
+close IN_FILE
+	or warn $!;
+
+print "\n[Info]  Summarizing input data, please wait ...\n";
+
+my $cur_processing_group;
+my $last_processing_group = "N/A";
+my %sram_sdf_cond_2_mp;
+my %source_sram;
+
+foreach my $sram_key (sort {$sram{$a} -> group <=> $sram{$b} -> group} keys %sram)
+{
+	$cur_processing_group = $sram{$sram_key} -> group;
+
+	if($cur_processing_group ne $last_processing_group)
+	{
+		foreach my $sram_sdf_cond_2_mp_key (keys %sram_sdf_cond_2_mp)
+		{
+			my $out_sdf_cond = sprintf("%20s", $sram_sdf_cond_2_mp_key);
+			my $out_mp = sprintf("%10s", $sram_sdf_cond_2_mp{$sram_sdf_cond_2_mp_key});
+			print "\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . " (source : " . $source_sram{$sram_sdf_cond_2_mp_key} . ")\n";
+		}
+
+		print "\n\t[Info]  Minimum-period report for Group : " . $cur_processing_group . "\n\n";
+
+		%sram_sdf_cond_2_mp = ();
+		%source_sram = ();
+	}
+
+	foreach my $sdf_cond_2_mp_key (keys %{$sram{$sram_key} -> sdf_cond_2_mp})
+	{
+		if((not defined $sram_sdf_cond_2_mp{$sdf_cond_2_mp_key}) || ($sram_sdf_cond_2_mp{$sdf_cond_2_mp_key} < $sram{$sram_key} -> sdf_cond_2_mp -> {$sdf_cond_2_mp_key}))
+		{
+			$sram_sdf_cond_2_mp{$sdf_cond_2_mp_key} = $sram{$sram_key} -> sdf_cond_2_mp -> {$sdf_cond_2_mp_key};
+			$source_sram{$sdf_cond_2_mp_key} = $sram_key;
+		}
+	}
+
+	$last_processing_group = $cur_processing_group;
+}
+
+foreach my $sram_sdf_cond_2_mp_key (keys %sram_sdf_cond_2_mp)
+{
+	my $out_sdf_cond = sprintf("%20s", $sram_sdf_cond_2_mp_key);
+	my $out_mp = sprintf("%10s", $sram_sdf_cond_2_mp{$sram_sdf_cond_2_mp_key});
+	print "\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . " (source : " . $source_sram{$sram_sdf_cond_2_mp_key} . ")\n";
+}
+
+print "\n[Info]  All process done, thank you!!\n\n";
+
+#####################
