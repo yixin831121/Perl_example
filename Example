@@ -1,4 +1,4 @@
-##### MBIST_lib_constructor.pl #####
+##### MBIST_lib_constructor.pl ##### (282 lines)
 
 #!/usr/bin/env perl
 
@@ -285,7 +285,7 @@ close IN_LIST
 
 #########################
 
-##### lib_mp_rev.pl #####
+##### lib_mp_rev.pl ##### (190 lines)
 
 #!/usr/bin/env perl
 
