@@ -1,0 +1,198 @@
+##### Extract_module_name.pl ##### (58 lines)
+
+#! /usr/bin/perl 
+
+#################################################################################
+#  Description:
+#
+#################################################################################
+$filename = $ARGV[0]; # input file
+$outfilename = "list.tmp"; # output file
+$outfilename2 = "list_mem.f"; # output file
+
+open (INFILE, "<$filename") or die $!; # open file for reading
+open (OUTFILE, ">$outfilename") or die $!; # open file for writing
+
+select (OUTFILE);
+
+$step = 0;
+$path = "";
+$name = "";
+
+
+while(<INFILE>) {
+    if ($_ =~ m/^Parsing.*\'(.*\dX\d.*)\'/) {
+        #print "$1\n";
+        $path = $1;
+    
+        open (INFILE2, "<$path") or die $!; # open file for reading
+        while(<INFILE2>) 
+        {
+            #===============================================
+            # step 1.0 : search module
+            #============================================
+            if ($step == 0){
+                if ($_ =~ m/^module\s*(\w*)/) {
+                    $step = 1;
+                    $name = $1;
+                }
+            #===============================================
+            # step 1.1 : search tsmc_dff
+            #============================================
+            } elsif ($step == 1) {
+                if ($_ =~ m/^endmodule/) {
+                    $step = 0;
+                } elsif ($_ =~ m/^initial/) {
+                    #print "# $path\n";
+                    print "set_design_attributes -attribute SNPS_reinit TRUE -models $name\n";
+                    $step = 0;
+                }
+            }
+        
+        }
+        close(INFILE2);
+
+    }
+}
+close(INFILE);
+close(OUTFILE);
+
+system( "sort $outfilename | uniq > $outfilename2" );
+
+#########################
+
+##### gen_prelib.pl ##### (63 lines)
+
+#! /usr/bin/perl 
+
+$filename = $ARGV[0]; # input file
+
+open (INFILE, "<$filename") or die $!; # open file for reading
+
+my $port_list = "";
+my $direction = "";
+my $step = 0;
+my $store_port = 0;
+#------------------------------
+# Get IO port
+#------------------------------
+while(<INFILE>) {
+	chomp $_;
+	$_ =~ s/\/\/.*//g;
+	$_ =~ s/\/\*.*\*\///g;
+# 
+    if ($stup == 0 && $_ =~ m/^\s*module\s+rgx_usc_wrapper_N7_H240\s/) {
+		$step = 1;
+    }
+# 
+    if ( ($step == 1 && $_ =~ m/^\s*(input\s|output\s|inout\s)/ ) || $cat_next == 1) {
+		$port_list = $port_list . $_ ;
+		if ($port_list !~ m/;/) {
+			$cat_next = 1;
+		} else {
+			$cat_next = 0;
+			$store_port = 1;
+		}
+	} 
+# 
+	if ($step > 0  && $_ =~ m/^\s*endmodule/) {
+		$step = 0;
+		last;
+	}
+
+# Store Port info.
+	if ($store_port == 1) {
+		#print "$port_list\n";
+		
+		$direction = "in"   if($port_list =~ m/^\s*input\s+/);
+		$direction = "out"  if($port_list =~ m/^\s*output\s+/);
+		$direction = "io"   if($port_list =~ m/^\s*inout\s+/);
+
+		$port_list =~ s/^\s*(input\s|output\s|inout\s)//g;
+		$port_list =~ s/;//g;
+		$port_list =~ s/\s+//g;
+		@port_arr = split (/,/,$port_list);
+
+		print "Direct: $direction\n";
+		foreach $port (@port_arr) {
+			print "\t$port\n";
+		}
+
+		$store_port = 0;
+		$port_list = "";
+	}
+
+
+}
+
+close(INFILE);
+
+#######################
+
+##### get_port.pl ##### (63 lines)
+
+#! /usr/bin/perl 
+
+$filename = $ARGV[0]; # input file
+
+open (INFILE, "<$filename") or die $!; # open file for reading
+
+my $port_list = "";
+my $direction = "";
+my $step = 0;
+my $store_port = 0;
+#------------------------------
+# Get IO port
+#------------------------------
+while(<INFILE>) {
+	chomp $_;
+	$_ =~ s/\/\/.*//g;
+	$_ =~ s/\/\*.*\*\///g;
+# 
+    if ($stup == 0 && $_ =~ m/^\s*module\s+rgx_usc_wrapper_N7_H240\s/) {
+		$step = 1;
+    }
+# 
+    if ( ($step == 1 && $_ =~ m/^\s*(input\s|output\s|inout\s)/ ) || $cat_next == 1) {
+		$port_list = $port_list . $_ ;
+		if ($port_list !~ m/;/) {
+			$cat_next = 1;
+		} else {
+			$cat_next = 0;
+			$store_port = 1;
+		}
+	} 
+# 
+	if ($step > 0  && $_ =~ m/^\s*endmodule/) {
+		$step = 0;
+		last;
+	}
+
+# Store Port info.
+	if ($store_port == 1) {
+		#print "$port_list\n";
+		
+		$direction = "in"   if($port_list =~ m/^\s*input\s+/);
+		$direction = "out"  if($port_list =~ m/^\s*output\s+/);
+		$direction = "io"   if($port_list =~ m/^\s*inout\s+/);
+
+		$port_list =~ s/^\s*(input\s|output\s|inout\s)//g;
+		$port_list =~ s/;//g;
+		$port_list =~ s/\s+//g;
+		@port_arr = split (/,/,$port_list);
+
+		print "Direct: $direction\n";
+		foreach $port (@port_arr) {
+			print "\t$port\n";
+		}
+
+		$store_port = 0;
+		$port_list = "";
+	}
+
+
+}
+
+close(INFILE);
+
+####################
