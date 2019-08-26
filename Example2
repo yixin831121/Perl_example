@@ -61,71 +61,123 @@ system( "sort $outfilename | uniq > $outfilename2" );
 
 #########################
 
-##### gen_prelib.pl ##### (63 lines)
+##### gen_prelib.pl ##### (115 lines)
 
 #! /usr/bin/perl 
 
+#################################################################################
+#  Description:
+#		Merge eag_cpu0/eag_cpu1/eag_cpu2/eag_cpu3 four compressors/decompressors into
+#		one eag_cpu0 compressor/decompressor
+#
+#################################################################################
 $filename = $ARGV[0]; # input file
+$outfilename = "$ARGV[0].presim"; # output file
+$time_dly = $ARGV[1];
+
 
 open (INFILE, "<$filename") or die $!; # open file for reading
+open (OUTFILE, ">$outfilename") or die $!; # open file for writing
 
-my $port_list = "";
-my $direction = "";
-my $step = 0;
-my $store_port = 0;
-#------------------------------
-# Get IO port
-#------------------------------
+select (OUTFILE);
+
+$step = 0;
 while(<INFILE>) {
-	chomp $_;
-	$_ =~ s/\/\/.*//g;
-	$_ =~ s/\/\*.*\*\///g;
-# 
-    if ($stup == 0 && $_ =~ m/^\s*module\s+rgx_usc_wrapper_N7_H240\s/) {
-		$step = 1;
-    }
-# 
-    if ( ($step == 1 && $_ =~ m/^\s*(input\s|output\s|inout\s)/ ) || $cat_next == 1) {
-		$port_list = $port_list . $_ ;
-		if ($port_list !~ m/;/) {
-			$cat_next = 1;
-		} else {
-			$cat_next = 0;
-			$store_port = 1;
+#===============================================
+# step 0 : initial dff
+#============================================
+        if ($_ =~ m/^primitive tsmc_dff\b/) {
+                print "module tsmc_dff (q, d, cp, cdn, sdn, notifier);\n";
+                print "    output q;\n";
+                print "    input d, cp, cdn, sdn, notifier;\n";
+                #print "    reg  q;\n";
+                print "    wire p_cdn;\n";
+                print "    reg  temp_cdn;\n";
+                print "    initial begin\n";
+                print "      temp_cdn =1;\n";
+                print "      #10ns;\n";
+                print "      if(cdn==1 && sdn==1)\n";
+                print "      begin\n";
+                print "        temp_cdn =0;\n";
+                print "        #10ns;\n";
+                print "        temp_cdn =1;\n";
+                print "      end\n";
+                print "    end\n";
+                print "    and (p_cdn, temp_cdn, cdn);\n";
+                print "    prim_tsmc_dff (q, d, cp, p_cdn, sdn, notifier);\n";
+                print "endmodule\n";
+                print "\n";
+                print "primitive prim_tsmc_dff (q, d, cp, cdn, sdn, notifier);\n";
+        }
+#===============================================
+# step 0 : initial dff_pwr
+#============================================
+        elsif ($_ =~ m/^primitive tsmc_dff_pwr\b/) {
+                print "module tsmc_dff_pwr (q, d, cp, cdn, sdn, notifier, vdd, vss);\n";
+                print "    output q;\n";
+                print "    input d, cp, cdn, sdn, notifier, vdd, vss;\n";
+                #print "    reg q;\n";
+                print "    wire p_cdn;\n";
+                print "    reg temp_cdn;\n";
+                print "    initial begin\n";
+                print "      temp_cdn =1;\n";
+                print "      #10ns;\n";
+                print "      if(cdn==1 && sdn==1)\n";
+                print "      begin\n";
+                print "        temp_cdn =0;\n";
+                print "        #10ns;\n";
+                print "        temp_cdn =1;\n";
+                print "      end\n";
+                print "    end\n";
+                print "    and (p_cdn, temp_cdn, cdn);\n";
+                print "    prim_tsmc_dff_pwr (q, d, cp, p_cdn, sdn, notifier, vdd, vss);\n";
+                print "endmodule\n";
+                print "\n";
+                print "primitive prim_tsmc_dff_pwr (q, d, cp, cdn, sdn, notifier, vdd, vss);\n";
+        }
+#===============================================
+# step 1.0 : search module
+#============================================
+		elsif ($step == 0){
+			if ($_ =~ m/^module/) {
+				$step = 1;
+			}
+			print $_;
 		}
-	} 
-# 
-	if ($step > 0  && $_ =~ m/^\s*endmodule/) {
-		$step = 0;
-		last;
-	}
-
-# Store Port info.
-	if ($store_port == 1) {
-		#print "$port_list\n";
-		
-		$direction = "in"   if($port_list =~ m/^\s*input\s+/);
-		$direction = "out"  if($port_list =~ m/^\s*output\s+/);
-		$direction = "io"   if($port_list =~ m/^\s*inout\s+/);
-
-		$port_list =~ s/^\s*(input\s|output\s|inout\s)//g;
-		$port_list =~ s/;//g;
-		$port_list =~ s/\s+//g;
-		@port_arr = split (/,/,$port_list);
-
-		print "Direct: $direction\n";
-		foreach $port (@port_arr) {
-			print "\t$port\n";
-		}
-
-		$store_port = 0;
-		$port_list = "";
-	}
-
+#===============================================
+# step 1.1 : search tsmc_dff
+#============================================
+        elsif ($step == 1) {
+			if ($_ =~ m/^endmodule/) 
+			{
+				$step = 0;
+			} 
+			elsif ($_ =~ m/tsmc_dff/) 
+			{
+				$_ =~ s/tsmc_dff\s+\(/tsmc_dff dff(/g;
+			} 
+			elsif ($_ =~ m/.*edge CP.* => .*/) {
+				#$_ =~ s/\(0, 0\)/\(0.01, 0.01\)/g;
+				#$_ =~ s/\(`OR_PROP_FF_DELAY, `OR_INVALID_DELAY\)/\(0.01, 0.01\)/g;
+			}
+			print $_;
+		} 
+#===============================================
+# step 1.2 : modify timing for flip-flops
+#============================================
+        #elsif ($step == 2) {
+		#	if ($_ =~ m/^endmodule/) {
+		#		$step = 0;
+		#	} elsif ($_ =~ m/.*edge CP.* => .*/) {
+		#		$_ =~ s/\(`OR_PROP_FF_DELAY, `OR_INVALID_DELAY\)/\(0.01, 0.01\)/g;
+		#	}
+		#	print $_;
+		#}
 
 }
 
 close(INFILE);
+close(OUTFILE);
 
 #######################
 
