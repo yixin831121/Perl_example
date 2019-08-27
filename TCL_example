@@ -1,0 +1,18 @@
+#set var "789def";
+#regexp -expanded -- {[^abc\s](?:def|ghi)(\w+)} ${var} a b;
+#regexp -expanded -- {([^abc]+)} ${var} a b;
+#puts "(${a})\t(${b})";
+
+set test "So it's abc, and it's ghi, or it's def.";
+regexp -expanded -- {(?:([^,]+),)[\s](?:([^,]+),)[\s](.+)\.$} ${test} 1 2 3 4;
+#regexp -expanded -- {(([^,]+),) } ${test} 1 2 3 4;
+#puts "(${2})\t(${3})\t(${4})";
+
+set fp [open "test.txt" w+];
+puts $fp "${2}\n${3}\n${4}";
+close $fp;
+
+set fp [open "test.txt" r];
+set fd [read $fp];
+puts $fd;
+close $fp;
