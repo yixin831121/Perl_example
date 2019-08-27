@@ -1,0 +1,651 @@
+#!/usr/bin/env perl
+
+# Script      : lib_mp.pl
+# Version     : v0r0
+# Author      : JeLuen, Ju
+# Description : library minimum period parser for each SRAM groups
+# KeyWord     : 
+# ChangeLog   : v0r0 : 2018 / 07 / 08 --> File Created
+
+
+
+# plug-in package declaration
+use strict;
+use warnings;
+no warnings qw(deprecated);
+use Class::Struct;
+use Switch;
+
+# system setting
+
+	# auto flush I/O buffers
+	$| = 1;
+
+# global setting
+	
+	my $in_file;
+	my $out_file = "./out.list";
+
+	my %sram;
+	my $cur_sram;
+	my $cur_sdf_cond;
+	my $corner_name;
+
+	struct mem_db => {
+		group => '$',
+		corner => '%',
+	};
+
+	struct sdf_cond_2_mp => {
+		mp => '%',
+	};
+
+######################
+#### Input Argv . ####
+######################
+if(not defined $ARGV[0])
+{
+SHOW_USAGE:
+	my $script_ref_name = $0;
+	$script_ref_name =~ s/^\S+\/([a-zA-Z0-9_.]+\.pl)$/$1/;
+
+	print "\n\tUsage : " . $script_ref_name . " \$in_file\n";
+	exit -1;
+}
+
+if(not defined $ARGV[0])
+{
+	print RED BOLD "[Error] you didn't specified \$in_file ...\n";
+	goto SHOW_USAGE;
+}
+else
+{
+	if(not -e $ARGV[0])
+	{
+		print "[Error] Cannot find \$in_file ...\n";
+		goto SHOW_USAGE;
+	}
+	else
+	{
+		$in_file = $ARGV[0];
+	}
+}
+
+###################### ###################### ######################
+#### Processing . #### #### Processing . #### #### Processing . ####
+###################### ###################### ######################
+
+print "\n\n[Info]  Processing input data, please wait ...\n";
+
+open IN_FILE, $in_file
+	or die $!;
+
+while (<IN_FILE>)
+{
+	chomp;
+
+	if(/^(\d+)\s+(\S+)$/)
+	{
+		$cur_sram = $2;
+		$sram{$cur_sram} = mem_db -> new();
+		$sram{$cur_sram} -> group($1);
+	}
+	elsif(/^(\S+)$/)
+	{
+		print "\n\t[Info]  scanning : " . $1 . "...\n\n";
+
+		my $lib_state = 0;
+		my $lib_file = $1;
+		$corner_name = $1 if($lib_file =~ m/\/?[a-zA-Z0-9]+_(\w+)\.lib$/);
+		$sram{$cur_sram} -> corner -> {$corner_name} = sdf_cond_2_mp -> new();
+		print "\t\tcorner : " . $corner_name . "\n\n";
+
+		open IN_LIB, $lib_file
+			or die $!;
+
+		while(<IN_LIB>)
+		{
+			switch($lib_state)
+			{
+				case 0
+				{
+					$lib_state = 1 if(/^\s+timing_type\s+:\s+minimum_period\s*;/);
+				}
+				case 1
+				{
+					  if(/^\s+sdf_cond\s+:\s+\"(\S+)\"\s*;/)
+					  {
+					  	$cur_sdf_cond = $1;
+						$lib_state = 2;
+					  }
+				}
+				case 2
+				{
+					$lib_state = 3 if(/rise_constraint/);
+				}
+				case 3
+				{
+					if(/^\s+values\s+\(\s+\"[^,]+,\s+[^,]+,\s+([^,]+)/)
+					{
+						#$sram{$cur_sram} -> corner -> {$corner_name} = sdf_cond_2_mp -> new();
+						$sram{$cur_sram} -> corner -> {$corner_name} -> mp -> {$cur_sdf_cond} = $1;
+						#$sram{$cur_sram} -> sdf_cond_2_mp -> {$cur_sdf_cond} = $1;
+						$lib_state = 0;
+
+						my $out_sdf_cond = sprintf("%20s", $cur_sdf_cond);
+						my $out_mp = sprintf("%10s", $1);
+						print "\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . "\n";
+					}
+				}
+			}
+		}
+
+		close IN_LIB
+			or warn $!;
+
+		if($lib_state ne 0)
+		{
+			print "\t[Error] lib_state error ... please check source code\n";
+			exit -1;
+		}
+	}
+}
+
+print "\n[Info]  Summarizing memory list, please wait ...\n";
+
+my $cur_processing_group;
+my $last_processing_group = "N/A";
+my %sram_sdf_cond_2_mp;
+my %source_sram;
+
+foreach my $sram_key (sort {$sram{$a} -> group <=> $sram{$b} -> group} keys %sram)
+{
+	$cur_processing_group = $sram{$sram_key} -> group;
+
+	if($cur_processing_group ne $last_processing_group)
+	{
+		foreach my $sram_sdf_cond_2_mp_key (keys %sram_sdf_cond_2_mp)
+		{
+			my $out_sdf_cond = sprintf("%20s", $sram_sdf_cond_2_mp_key);
+			my $out_mp = sprintf("%10s", $sram_sdf_cond_2_mp{$sram_sdf_cond_2_mp_key});
+			print "\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . " (source : " . $source_sram{$sram_sdf_cond_2_mp_key} . ")\n";
+		}
+
+		print "\n\t[Info]  Minimum-period report for Group : " . $cur_processing_group . "\n\n";
+
+		%sram_sdf_cond_2_mp = ();
+		%source_sram = ();
+	}
+
+	foreach my $corner_key (keys %{$sram{$sram_key} -> corner})
+	{
+			
+		foreach my $sdf_cond_2_mp_key (keys %{$sram{$sram_key} -> corner -> {$corner_key} -> mp})
+		{
+			if((not defined $sram_sdf_cond_2_mp{$sdf_cond_2_mp_key}) || ($sram_sdf_cond_2_mp{$sdf_cond_2_mp_key} < $sram{$sram_key} -> corner -> {$corner_key} -> mp -> {$sdf_cond_2_mp_key}))
+			{
+				$sram_sdf_cond_2_mp{$sdf_cond_2_mp_key} = $sram{$sram_key} -> corner -> {$corner_key} -> mp -> {$sdf_cond_2_mp_key};
+				$source_sram{$sdf_cond_2_mp_key} = $sram_key . " @ " . $corner_key;
+			}
+		}
+	}
+
+	$last_processing_group = $cur_processing_group;
+}
+
+foreach my $sram_sdf_cond_2_mp_key (keys %sram_sdf_cond_2_mp)
+{
+	my $out_sdf_cond = sprintf("%20s", $sram_sdf_cond_2_mp_key);
+	my $out_mp = sprintf("%10s", $sram_sdf_cond_2_mp{$sram_sdf_cond_2_mp_key});
+	print "\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . " (source : " . $source_sram{$sram_sdf_cond_2_mp_key} . ")\n";
+}
+
+print "\n[Info]  All process done, thank you!!\n\n";
+#! /usr/bin/perl
+
+# plug-in package declaration
+
+use strict;
+use warnings;
+#use diagnostics;
+use Switch;
+use Term::ANSIColor qw(:constants);
+no warnings qw(deprecated);
+use Class::Struct;
+
+# system setting
+
+	# auto flush I/O buffers
+	$| = 1;
+
+	# auto reset text colour
+	$Term::ANSIColor::AUTORESET = 1;
+
+# user setting
+
+	my $central_path = "/FSIM/N7_PETV_ISF_central_20181101/ISF2/design/lib/v7/";
+
+# global setting
+
+	my $in_csv_file;
+	my $cur_compiler;
+	my $in_state = 0;
+	my $group_number;
+	my $sram_name;
+	my @mem_list = ();
+	my %sram_list;
+	my %target_sram_file;
+#	$target_sram_file{"ctl"} = "ctl";
+#	$target_sram_file{"masis"} = "masis";
+#	$target_sram_file{"lef"} = "lef";
+#	$target_sram_file{"db"} = "syn/nldm";
+	$target_sram_file{"lib"} = "syn/nldm";
+#	$target_sram_file{"v"} = "vlg";
+
+###################### ###################### ######################
+#### Initialize . #### #### Initialize . #### #### Initialize . ####
+###################### ###################### ######################
+INITIALIZER_ENTRY:
+
+my $script_ref_name = $0;
+$script_ref_name =~ s/^\S+\/([a-zA-Z0-9_.]+\.pl)$/$1/;
+
+print "\n\n";
+print CYAN "[Info]";
+print "  Initializing : ";
+print MAGENTA $script_ref_name;
+print " ...\n\n";
+
+###################### ###################### ######################
+#### Input Argv . #### #### Input Argv . #### #### Input Argv . ####
+###################### ###################### ######################
+if(not defined $ARGV[0])
+{
+SHOW_USAGE:
+
+	print RED BOLD "[Error]";
+	print " you didn't specify \$in_cvs_file ...\n";
+	print "\n\tUsage : " . $script_ref_name . " \$in_csv_file (fil with configured SRAM type / list / inst. count ... etc.)\n\n";
+	exit -1;
+}
+else
+{
+	if(not -e $ARGV[0])
+	{
+		print RED BOLD "[Error]";
+		print " Cannot find ";
+		print GREEN $ARGV[0];
+		print " ...\n\n";
+		exit -1;;
+	}
+	elsif((not -f $ARGV[0]) || (not -r _))
+	{
+		print RED BOLD "[Error]";
+		print " Cannot assign ";
+		print GREEN $ARGV[0];
+		print " as in_csv_file, it is either a directory or not readable by effective uid/gid ...\n\n";
+		exit -1;
+	}
+	else
+	{
+		$in_csv_file = $ARGV[0];
+	}
+}
+
+###################### ###################### ######################
+#### Processing . #### #### Processing . #### #### Processing . ####
+###################### ###################### ######################
+print "\n\n\n\n";
+print CYAN "[Info]";
+print "  Processing ";
+print GREEN $in_csv_file;
+print ", please wait ...\n\n";
+
+open IN_LIST, $in_csv_file
+	or die $!;
+
+while(<IN_LIST>)
+{
+	switch($in_state)
+	{
+		case 0
+		{
+			if(/^begin_compiler/)
+			{
+				$in_state = 1;
+			}
+			elsif(/Num:,,Type:,([^,]+)/ || /^\d+,\d+,\d+,[^,]+/ || /^end_compiler/)
+			{
+				print RED BOLD "[Error]";
+				print " Parser error in in_csv_file : ";
+				print GREEN $in_csv_file;
+				print ", in line : ";
+				print BLUE $.;
+				print ", in script line : ";
+				print BLUE __LINE__;
+				print ", terminating ...\n\n";
+
+				exit -1;
+			}
+		}
+		case 1
+		{
+			if(/Num:,,Type:,([^,]+)/)
+			{
+				$cur_compiler = $1;
+				$in_state = 2;
+			}
+			elsif(/^\d+,\d+,\d+,[^,]+/ || /^begin_compiler/ || /^end_compiler/)
+			{
+				print RED BOLD "[Error]";
+				print " Parser error in in_csv_file : ";
+				print GREEN $in_csv_file;
+				print ", in line : ";
+				print BLUE $.;
+				print ", in script line : ";
+				print BLUE __LINE__;
+				print ", terminating ...\n\n";
+
+				exit -1;
+			}
+		}
+		case 2
+		{
+			if(/^\d+,(\d+),\d+,([^,]+)/)
+			{
+				$group_number = $1;
+				$sram_name = uc($2);
+
+				if(defined $sram_list{$2})
+				{
+					if($sram_list{$2} ne $cur_compiler)
+					{
+						print "\t";
+						print YELLOW BOLD "[Warn]";
+						print "  sram : ";
+						print BLUE $2;
+						print " is defined in multiple compiler list, i.e., ";
+						print BLUE $sram_list{$2};
+						print ", ";
+						print BLUE $cur_compiler;
+						print ", it is highly recommended to check your csv file ...\n\n";
+					}
+#					else
+#					{
+#						print "\n\t";
+#						print CYAN "[Info]";
+#						print "  processing memory : " . $sram_name . ",from group " . $group_number . "\n\n";
+	
+#						foreach my $target_sram_file_key (keys %target_sram_file)
+#						{
+#							my $exec_cmd = "find " . $central_path . $target_sram_file{$target_sram_file_key} . " -iname " . "\"" . $2 . "*." . $target_sram_file_key . "\"";
+#							my @target_list = `$exec_cmd`;
+#							unshift(@target_list,"${group_number} ${sram_name}\n");
+							#@target_list = ("${group_number} ${sram_name}\n",@target_list);
+	
+#							if($#target_list eq "-1")
+#							{
+#								print "\n\t\t";
+#								print RED BOLD "[Error]";
+#								print " No any available " . $target_sram_file_key . " file found ...\n\n";
+#							}
+#							else
+#							{
+#								print "\n\t\t";
+#								print CYAN "[Info]";
+#								print "  listing " . $target_sram_file_key . " file ...\n\n";
+#								foreach my $target_list_content (@target_list)
+#								{
+									#chomp($target_list_content);
+									#print "\t\t\t--> "; 
+#									print "\t\t$target_list_content";
+									#system("cp -L " . $target_list_content . " " . $target_path . $cur_compiler . "/" . $2 . "/" . $target_sram_path{$target_sram_file_key}) if($real_flag eq 1);
+#								}
+#								print "\n";
+#								push(@mem_list,@target_list);
+#							}
+#						}
+#					}
+				}
+				else
+				{
+					$sram_list{$2} = $cur_compiler;
+
+					print "\n\t";
+					print CYAN "[Info]";
+					print "  processing memory : " . $sram_name . ",from group " . $group_number . "\n\n";
+	
+					foreach my $target_sram_file_key (keys %target_sram_file)
+					{
+						my $exec_cmd = "find " . $central_path . $target_sram_file{$target_sram_file_key} . " -iname " . "\"" . $2 . "*." . $target_sram_file_key . "\"";
+						my @target_list = `$exec_cmd`;
+						unshift(@target_list,"${group_number} ${sram_name}\n");
+						#@target_list = ("${group_number} ${sram_name}\n",@target_list);
+	
+						if($#target_list eq "-1")
+						{
+							print "\n\t\t";
+							print RED BOLD "[Error]";
+							print " No any available " . $target_sram_file_key . " file found ...\n\n";
+						}
+						else
+						{
+							print "\n\t\t";
+							print CYAN "[Info]";
+							print "  listing " . $target_sram_file_key . " file ...\n\n";
+							foreach my $target_list_content (@target_list)
+							{
+								#chomp($target_list_content);
+								#print "\t\t\t--> "; 
+								print "\t\t$target_list_content";
+								#system("cp -L " . $target_list_content . " " . $target_path . $cur_compiler . "/" . $2 . "/" . $target_sram_path{$target_sram_file_key}) if($real_flag eq 1);
+							}
+							print "\n";
+							push(@mem_list,@target_list);
+						}
+					}
+				}
+			}
+			elsif(/^end_compiler/)
+			{
+				$in_state = 0;
+			}
+			elsif(/Num:,,Type:,([^,]+)/ || /^begin_compiler/)
+			{
+				print RED BOLD "[Error]";
+				print " Parser error in in_csv_file : ";
+				print GREEN $in_csv_file;
+				print ", in line : ";
+				print BLUE $.;
+				print ", in script line : ";
+				print BLUE __LINE__;
+				print ", terminating ...\n\n";
+
+				exit -1;
+			}
+		}
+	}
+}
+
+close IN_LIST
+	or warn $!;
+
+print "\nmem_list : \n";
+foreach (@mem_list) {print $_;}
+print "\n\n[Info]  Memory list is generated ...\n";
+
+###################### ###################### ######################
+#### Processing . #### #### Processing . #### #### Processing . ####
+###################### ###################### ######################
+print "\n\n[Info]  Processing memory list, please wait ...\n";
+
+my $out_file = "./out.list";
+
+my %sram;
+my $cur_sram;
+my $cur_sdf_cond;
+my $corner_name;
+
+struct mem_db => {
+	group => '$',
+	corner => '%',
+};
+
+struct sdf_cond_2_mp => {
+	mp => '%',
+};
+
+foreach (@mem_list)
+{
+	chomp;
+
+	if(/^(\d+)\s+(\S+)$/)
+	{
+		$cur_sram = $2;
+		$sram{$cur_sram} = mem_db -> new();
+		$sram{$cur_sram} -> group($1);
+	}
+	elsif(/^(\S+)$/)
+	{
+		print "\n\t[Info]  scanning : " . $1 . "...\n\n";
+
+		my $lib_state = 0;
+		my $lib_file = $1;
+		$corner_name = $1 if($lib_file =~ m/\/?[a-zA-Z0-9]+_(\w+)\.lib$/);
+		$sram{$cur_sram} -> corner -> {$corner_name} = sdf_cond_2_mp -> new();
+		print "\t\tcorner : " . $corner_name . "\n\n";
+
+		open IN_LIB, $lib_file
+			or die $!;
+
+		while(<IN_LIB>)
+		{
+			switch($lib_state)
+			{
+				case 0
+				{
+					$lib_state = 1 if(/^\s+timing_type\s+:\s+minimum_period\s*;/);
+				}
+				case 1
+				{
+					  if(/^\s+sdf_cond\s+:\s+\"(\S+)\"\s*;/)
+					  #if(/^\s+sdf_cond\s+:\s+\"(when\_sram\_en(?:\_turbo0)*)\"\s*;/)
+					  {
+					  	$cur_sdf_cond = $1;
+						$lib_state = 2;
+					  }
+					  #elsif(/^\s+sdf_cond/)
+					  #{
+					  #	$lib_state = 0;
+					  #}
+				}
+				case 2
+				{
+					$lib_state = 3 if(/rise_constraint/);
+				}
+				case 3
+				{
+					if(/^\s+values\s+\(\s+\"[^,]+,\s+[^,]+,\s+([^,]+)/)
+					{
+						#$sram{$cur_sram} -> corner -> {$corner_name} = sdf_cond_2_mp -> new();
+						$sram{$cur_sram} -> corner -> {$corner_name} -> mp -> {$cur_sdf_cond} = $1;
+						#$sram{$cur_sram} -> sdf_cond_2_mp -> {$cur_sdf_cond} = $1;
+						$lib_state = 0;
+
+						my $out_sdf_cond = sprintf("%20s", $cur_sdf_cond);
+						my $out_mp = sprintf("%10s", $1);
+						print "\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . "\n";
+					}
+				}
+			}
+		}
+
+		close IN_LIB
+			or warn $!;
+
+		if($lib_state ne 0)
+		{
+			print "\t[Error] lib_state error ... please check source code\n";
+			exit -1;
+		}
+	}
+}
+
+print "\n[Info]  Summarizing memory list, please wait ...\n";
+
+my $cur_processing_group;
+my $last_processing_group = "N/A";
+my %sram_sdf_cond_2_mp;
+my %corner_sdf_cond_2_mp;
+my %source_sram;
+my %corner_list;
+
+#my @sram_key = sort {$sram{$a} -> group <=> $sram{$b} -> group} keys %sram;
+#foreach (@sram_key) {print "$_\n"};
+
+foreach my $sram_key (sort {$sram{$a} -> group <=> $sram{$b} -> group} keys %sram)
+{
+	$cur_processing_group = $sram{$sram_key} -> group;
+
+	if($cur_processing_group ne $last_processing_group)
+	{
+		print "\n\t\t[B]  Group report : \n\n" unless($last_processing_group eq "N/A");
+		foreach my $sram_sdf_cond_2_mp_key (keys %sram_sdf_cond_2_mp)
+		{
+			my $out_sdf_cond = sprintf("%20s", $sram_sdf_cond_2_mp_key);
+			my $out_mp = sprintf("%10s", $sram_sdf_cond_2_mp{$sram_sdf_cond_2_mp_key});
+			print "\t\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . " (source : " . $source_sram{$sram_sdf_cond_2_mp_key} . ")\n";
+		}
+
+		print "\n\t[Info]  Minimum-period report for Group " . $cur_processing_group . "\n\n";
+		print "\t\t[A]  Memory cell report : \n";
+
+		%sram_sdf_cond_2_mp = ();
+		%source_sram = ();
+	}
+
+	foreach my $corner_key (keys %{$sram{$sram_key} -> corner})
+	{
+			
+		foreach my $sdf_cond_2_mp_key (keys %{$sram{$sram_key} -> corner -> {$corner_key} -> mp})
+		{
+			if((not defined $corner_sdf_cond_2_mp{$sdf_cond_2_mp_key}) || ($corner_sdf_cond_2_mp{$sdf_cond_2_mp_key} < $sram{$sram_key} -> corner -> {$corner_key} -> mp -> {$sdf_cond_2_mp_key}))
+			{
+				$corner_sdf_cond_2_mp{$sdf_cond_2_mp_key} = $sram{$sram_key} -> corner -> {$corner_key} -> mp -> {$sdf_cond_2_mp_key};
+				$corner_list{$sdf_cond_2_mp_key} = $corner_key;
+				#$source_sram{$sdf_cond_2_mp_key} = $sram_key . " @ " . $corner_key;
+			}
+		}
+	}
+
+	print "\n\t\t     cell name : " . $sram_key . "\n";
+	foreach my $corner_sdf_cond_2_mp_key (keys %corner_sdf_cond_2_mp)
+		{
+			my $out_sdf_cond = sprintf("%20s", $corner_sdf_cond_2_mp_key);
+			my $out_mp = sprintf("%10s", $corner_sdf_cond_2_mp{$corner_sdf_cond_2_mp_key});
+			print "\t\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . " (corner : " . $corner_list{$corner_sdf_cond_2_mp_key} . ")\n";
+		}
+
+	foreach my $sdf_cond_2_mp_key (keys %corner_sdf_cond_2_mp)
+		{
+			if((not defined $sram_sdf_cond_2_mp{$sdf_cond_2_mp_key}) || ($sram_sdf_cond_2_mp{$sdf_cond_2_mp_key} < $corner_sdf_cond_2_mp{$sdf_cond_2_mp_key}))
+			{
+				$sram_sdf_cond_2_mp{$sdf_cond_2_mp_key} = $corner_sdf_cond_2_mp{$sdf_cond_2_mp_key};
+				$source_sram{$sdf_cond_2_mp_key} = $sram_key . " @ " . $corner_list{$sdf_cond_2_mp_key};
+			}
+		}
+
+	%corner_sdf_cond_2_mp = ();
+	%corner_list = ();
+	$last_processing_group = $cur_processing_group;
+}
+
+print "\n\t\t[B]  Group report : \n\n";
+foreach my $sram_sdf_cond_2_mp_key (keys %sram_sdf_cond_2_mp)
+{
+	my $out_sdf_cond = sprintf("%20s", $sram_sdf_cond_2_mp_key);
+	my $out_mp = sprintf("%10s", $sram_sdf_cond_2_mp{$sram_sdf_cond_2_mp_key});
+	print "\t\t\tsdf_cond = " . $out_sdf_cond . " ; minimum_period = " . $out_mp . " (source : " . $source_sram{$sram_sdf_cond_2_mp_key} . ")\n";
+}
+
+print "\n[Info]  All process done, thank you!!\n\n";
