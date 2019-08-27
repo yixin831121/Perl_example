@@ -179,6 +179,55 @@ close NETLIST or warn $!;
 
 use strict;
 use warnings;
+use Switch;
+
+print "$0\n";
+
+my $script_name = $0;
+$script_name =~ s/^\S+\/(\w+\.pl)$/$1/;
+print "$script_name\n";
+
+#if((not defined $ARGV[0]) || (not defined $ARGV[1]))
+if(not defined @ARGV)
+{
+	print "\n\tUsage : " . $script_name . " \$vlg_file_1 \$vlg_file_2\n";
+#	exit -1;
+}
+else
+{
+	my @vlg_file = @ARGV;
+	foreach my $vlg (@vlg_file)
+	{
+#	$vlg =~ s/^\S+\/(\w+\.[vlg]+$)/$1/;
+	$vlg =~ s/^\S+\/(\w+\.v.*)/$1/;
+#	$vlg =~ s/^\S+\/(\w+\.vg?)/$1/;
+	print "$vlg\n";
+	}
+}
+print "$ARGV[0]\n";
+
+#[a-z_A-Z]
+#abas_xxxa.aa$bbba#cc
+#\ba
+#a\b
+
+my $port = "[12:0]data";
+$port =~ s/^(\[\d+:\d+\])\b(\w+)/$2$1/;
+print "$port\n";
+
+my $x = "a, b, c;";
+split(/\,\s/,$x);
+#$x =~ m/\s*\b(?:(\w+),\s)+(\w+);$/;
+foreach my $val (@_) {print "$val\n"};
+
+my $test = ".useless";
+$test =~ m/^[.](\w+)/;
+print $1;
+
+#!/usr/bin/perl
+
+use strict;
+use warnings;
 
 my $test1 = "So it's abc, and it's ghi, or it's def.";
 $test1 =~ m/((?:[^,]+),)[\s]((?:[^,]+),)[\s](.+)\.$/;
