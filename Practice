@@ -174,3 +174,35 @@ while(<NETLIST>)
 }
 
 close NETLIST or warn $!;
+
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+my $test1 = "So it's abc, and it's ghi, or it's def.";
+$test1 =~ m/((?:[^,]+),)[\s]((?:[^,]+),)[\s](.+)\.$/;
+#print "($1)\t($2)\t($3)\n";
+
+#print my $fh = "test"."\n";
+#print "$fh\n";
+my $filename = $ARGV[0];
+open (FH,'<',$filename) or die "Can't open file $filename : $!\n";
+my @array = ();
+while(<FH>){
+	chomp;
+	push(@array,$_);
+	#print chomp($_);
+	#my $newline = ($_ =~ m/([\s]+)/);
+	#print "$newline"."\n";
+};
+#chomp(my @fh = <FH>);
+foreach my $content (@array) {
+	print "$content\n";
+};
+close FH;
+
+my $test2 = "test!\n";
+(my $a) = ($test2 =~ m/([ts]+)/);
+#print "$a\n";
+#print "$test2";
