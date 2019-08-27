@@ -1,0 +1,17 @@
+chmod 0755 ./MBIST_lib_constructor.pl
+MBIST_lib_constructor.pl HC_0524.csv | tee run.log
+
+find Library/FileList/ -type f | grep -vP 'swp|rom' | awk '{print "cat " $1}' | tcsh > ! allfile.log
+find Library/FileList/ -type f | grep -vP 'swp|rom' | awk '{print cat $1}' | tcsh > ! allfile.log
+find Library/FileList/ -type f | grep -vP 'swp|rom' | awk 'cat $1' | tcsh > allfile.log 
+
+libreoffice4.2 --calc ./Library/Spec/HC_0524.csv &
+
+source ./Library//FileList/find.cmd > ! & missing.log
+source ./Library//FileList/find.cmd > & missing.log
+source ./Library//FileList/find.cmd & > missing.log
+source ./Library//FileList/find.cmd > missing.log
+
+find . -type f | grep -vP 'rom|swp' | awk '{print "cat " $1 " | perl -n -e \x27 chomp; print \x22 find \x22 . \$_ . \x22\\n\x22\x27"}' | tcsh > find.cmd
+find . -type f | grep -vP 'rom|swp' | awk '{print "cat " $1 " | perl -n -e \x27 chomp; print \x22 find \x22 . \$_ . \x22\\n\x22\x27"}'
+find . -type f | grep -vP 'rom|swp'
