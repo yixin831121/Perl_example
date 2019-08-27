@@ -1,3 +1,39 @@
+#! /usr/bin/perl
+
+use strict;
+use warnings;
+use diagnostics;
+
+#print "\n";
+print my $test = "\"test_en1\"";
+#print "\n\n";
+$test =~ m/\"(test(?:\_en1)?)\"/;
+#print "$1\n\n";
+
+my $x = 5;
+my $title = $x-1;
+#print "$title\n\n";
+
+my %num=(1=>[1..5],2=>[6..10],3=>[11..15],4=>[16..20],5=>[21..25]);
+my @num = sort {$num{$a} <=> $num{$b}} keys %num;
+#foreach (@num) {print "$_\n"};
+										
+my $corner_spec_content = "ffgnp_0p700v_0p700v_125c_cbest_ccbest\n";
+#print "\nmatch\n" if($corner_spec_content =~ m/^(?:[a-z]+)\_[a-z0-9]+v\_[a-z0-9]+v\_\w+/);
+
+#printf "\n%-10s\n","tommy";
+my $out = sprintf("%-20s","my name");
+$out = $out . ": vincent";
+print "\n$out\n";
+
+my %hash = ();
+print "\nwarn\n" if(not defined $hash{"keys"});
+
+while(<STDIN>)
+{
+	print "$_\n";
+}
+
 #!/usr/bin/env perl
 
 # Script      : lib_mp.pl
