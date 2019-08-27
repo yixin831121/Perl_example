@@ -1,0 +1,176 @@
+#!/usr/bin/env perl
+
+# Script      : MBIST_lib_constructor.pl
+# Version     : v0r0
+# Author      : JeLuen, Ju
+# Description : align with MH/MDP's lib folder structure, compose related lib file from central to local database
+# KeyWord     : 
+# ChangeLog   : v0r0 : 2018 / 05 / 14 --> File Created
+
+
+
+# plug-in package declaration
+
+use strict;
+use warnings;
+use diagnostics;
+use Switch;
+use Term::ANSIColor qw(:constants);
+
+# system setting
+
+	# auto flush I/O buffers
+#	$| = 1;
+
+	# auto reset text colour
+	$Term::ANSIColor::AUTORESET = 1;
+
+# global setting
+
+	my $netlist;
+
+	my $empty_module;
+
+	my $design_name;
+
+	my %hash_empty;
+
+	my %hash_netlist;
+
+###################### ###################### ######################
+#### Initialize . #### #### Initialize . #### #### Initialize . ####
+###################### ###################### ######################
+#INITIALIZER_ENTRY:
+
+my $script_ref_name = $0;
+$script_ref_name =~ s/^\S+\/([a-zA-Z0-9_.]+\.pl)$/$1/;
+
+print "\n\n";
+print CYAN "[Info]";
+print "  Initializing : ";
+print MAGENTA $script_ref_name;
+print " ...\n\n";
+
+###################### ###################### ######################
+#### Input Argv . #### #### Input Argv . #### #### Input Argv . ####
+###################### ###################### ######################
+if((not defined $ARGV[0]) || (not defined $ARGV[1]))
+{
+#SHOW_USAGE:
+
+	print "\n\tUsage : " . $script_ref_name . " \$verilog_file_1 \$verilog_file_2\n";
+	exit -1;
+}
+else
+{
+	unless((-f $ARGV[0]) && (-r _))
+	{
+		print RED BOLD "[Error]";
+		print " Cannot assign : ";
+		print GREEN $ARGV[0];
+		print " as verilog_file_1, it is either a directory or not readable by effective uid/gid ...\n\n";
+		exit -1;
+	}
+
+	unless((-f $ARGV[1]) && (-r _))
+	{
+		print RED BOLD "[Error]";
+		print " Cannot assign : ";
+		print GREEN $ARGV[1];
+		print " as verilog_file_2, it is either a directory or not readable by effective uid/gid ...\n\n";
+		exit -1;
+	}
+
+	foreach (@ARGV)
+	{
+		if($_ =~ m/^\S+\/([a-zA-Z0-9_.]+(?:empty)[a-zA-Z0-9_.]*)\.v.*$/)
+		{
+			print "\nempty module : ";
+			print $empty_module = $_;
+			print "\n\n";
+			
+		}
+		else
+		{
+			$_ =~ m/^\S+\/([a-zA-Z0-9_.]+)\.v.*$/;
+			print "netlist : ";
+			print $netlist = $_;
+			print "\n\ndesign name : ";
+			print $design_name = $1;
+#			print "\n\n";
+
+		}
+	}
+}
+
+###################### ###################### ######################
+#### Processing . #### #### Processing . #### #### Processing . ####
+###################### ###################### ######################
+print "\n\n\n\n";
+print CYAN "[Info]";
+print "  Processing ";
+print GREEN $design_name;
+print ", please wait ...\n\n";
+
+open (EMPTY, $empty_module) or die $!;
+
+while(<EMPTY>)
+{
+	if(/^\s*\b(input|output|inout)\s*(\[\d+\:\d+\]|\s)\s*\b(.+);/)
+	{
+		my $dir = $1;
+		my $bus = $2;
+		my $pin = $3;
+		$pin = $pin.$bus if ($bus =~ m/\S+/);
+#		print "$dir $pin\n";
+		$hash_empty{$pin} = $dir;
+	}
+}
+foreach my $key (keys %hash_empty) {print " direction : $hash_empty{$key}, pin name : ${key}\n"};
+
+close EMPTY or warn $!;
+
+open (NETLIST, $netlist) or die $!;
+
+my $in_state = 0;
+while(<NETLIST>)
+{
+	switch($in_state)
+	{
+		case 0
+		{
+			if(/^\s*\bmodule\s*${design_name}.*/)
+			{
+				$in_state = 1;
+			}
+		}
+
+		case 1
+		{
+			if(/^\s*\b(input|output|inout)\s+(.+);$/)
+			{
+				my $dir = $1;
+				if($2 =~ m/\s*(\[\d+\:\d+\])\s*\b(.+)$/)
+				{
+					my $bus = $1;
+					my $pin = $2;
+					$pin = $pin.$bus;
+					print "$dir $pin\n";
+					$hash_netlist{$pin} = $dir;
+				}
+				elsif($2 =~ m/\s*\b(.+)$/)
+				{
+					split(/\,\s/,$1);
+					foreach my $pin (@_) 
+					{
+						print "$dir $pin\n";
+						$hash_netlist{$pin} = $dir;
+					}
+				}
+			}
+			else {exit -1;}
+		}
+	}
+}
+
+close NETLIST or warn $!;
